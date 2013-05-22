@@ -16,7 +16,6 @@ if(!file_exists('bin/ExeFile.exe')) {
 }
 
 const LAUNCHER_INFO = 'http://client.eveonline.com/patches/win_launcherinfoTQ_inc.txt';
-const VERIFY_USER = 'https://client.eveonline.com/launcherv3/en/VerifyUser/';
 
 $c = curl_init();
 //curl_setopt($c, CURLOPT_VERBOSE, true);
@@ -43,8 +42,8 @@ $loginpage->loadHTML(curl_exec($c));
 $actionuri = url_relative_to_absolute($loginuri, $loginpage->getElementsByTagName('form')->item(0)->getAttribute('action'));
 
 curl_setopt($c, CURLOPT_URL, $actionuri);
-$account = prompt('Account name: ');
-$passwd = prompt('Password: ', true);
+$account = prompt('Account : ');
+$passwd =  prompt('Password: ', true);
 curl_setopt($c, CURLOPT_POST, true);
 curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query(array('UserName' => $account, 'Password' => $passwd)));
 curl_setopt($c, CURLOPT_FOLLOWLOCATION, false);
@@ -102,38 +101,17 @@ if(!preg_match('%#access_token=([^&]+)%', $finaluri, $matches)) {
 }
 
 $token = $matches[1];
-if(!$token) {
-    fatal('got no token, something is wrong');
-}
 info('got token '.$token);
 
-curl_setopt($c, CURLOPT_URL, VERIFY_USER);
-curl_setopt($c, CURLOPT_HEADER, false);
-curl_setopt($c, CURLOPT_POST, true);
-curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query(array('token' => $token)));
-curl_setopt($c, CURLOPT_HTTPHEADER, array('Authorization', 'Bearer '.$token));
-$verify = json_decode(json_decode(curl_exec($c)), true); /* NOT a typo */
-
-if($verify['Scopes'] !== 'eveClientToken') {
-    fatal('got invalid Scope, something is wrong');
-} else {
-    info('user validated, userID is '.$verify['UserID']);
-}
-
 curl_setopt($c, CURLOPT_URL, url_relative_to_absolute($finaluri, '/launcher/token?accesstoken='.$token));
-curl_setopt($c, CURLOPT_POST, false);
-curl_setopt($c, CURLOPT_HEADER, true);
 $finaltoken = curl_exec($c);
 
 if(!preg_match('%#access_token=([^&]+)%', $finaltoken, $matches)) {
     fatal('got no client access token, something is wrong!');
 }
 $finaltoken = $matches[1];
-if(!$finaltoken) {
-    fatal('got no final token, something is wrong');
-}
-
 info('got final token '.$finaltoken);
+
 info("launching client…");
 passthru('wine bin/ExeFile.exe /noconsole /ssoToken='.$finaltoken.' /server:Tranquility');
 
