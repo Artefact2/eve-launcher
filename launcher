@@ -28,8 +28,8 @@ curl_setopt($c, CURLOPT_COOKIEFILE, $f);
 curl_setopt($c, CURLOPT_HTTPHEADER, array('User-Agent', 'EVEOnlineLauncher/2.1.539169'));
 
 curl_setopt($c, CURLOPT_URL, LAUNCHER_INFO);
-$launcherinfo = yaml_parse(curl_exec($c));
-$landingpageuri = url_relative_to_absolute(LAUNCHER_INFO, $launcherinfo['UISettings']['LandingPage']);
+preg_match('%    LandingPage: (.+)$%m', curl_exec($c), $matches);
+$landingpageuri = url_relative_to_absolute(LAUNCHER_INFO, trim($matches[1]));
 
 curl_setopt($c, CURLOPT_URL, $landingpageuri);
 $launcherpage = new \DOMDocument();
@@ -139,7 +139,6 @@ function fatal($mesg) {
 
 function check_prereqs() {
     function_exists('curl_init') or fatal("curl extension is required");
-    function_exists('yaml_parse') or fatal("PECL yaml extension is required (pecl install yaml-beta)");
 }
 
 function url_relative_to_absolute($current, $relative) {
