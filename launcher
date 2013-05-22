@@ -112,8 +112,16 @@ if(!preg_match('%#access_token=([^&]+)%', $finaltoken, $matches)) {
 $finaltoken = $matches[1];
 info('got final token '.$finaltoken);
 
+$command = escapeshellcmd('wine');
+$command .= ' '.escapeshellarg('bin/ExeFile.exe');
+$command .= ' '.escapeshellarg('/ssoToken='.$finaltoken);
+
+for($i = 1; $i < $argc; ++$i) {
+    $command .= ' '.escapeshellarg($argv[$i]);
+}
+
 info("launching client…");
-passthru('wine bin/ExeFile.exe /noconsole /ssoToken='.$finaltoken.' /server:Tranquility');
+passthru($command);
 
 curl_close($c);
 die();

@@ -16,5 +16,13 @@ Usage
 
 ~~~
 cd /path/to/my/eve
-WINEPREFIX=/my/wine/prefix /path/to/eve-launcher/launcher
+WINEPREFIX=/my/wine/prefix /path/to/eve-launcher/launcher <client_options…>
+~~~
+
+Examples
+========
+
+~~~
+cd ~/eve
+~/eve-launcher/launcher /server:Tranquility /nosplash /noconsole /end /LUA:OFF
 ~~~
