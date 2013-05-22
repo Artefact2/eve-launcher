@@ -1,0 +1,197 @@
+#!/usr/bin/env php
+<?php
+/* Author: Romain "Artefact2" Dalmaso <artefact2@gmail.com>
+ *
+ * This program is free software. It comes without any warranty, to the
+ * extent permitted by applicable law. You can redistribute it and/or
+ * modify it under the terms of the Do What The Fuck You Want To Public
+ * License, Version 2, as published by Sam Hocevar. See
+ * http://sam.zoy.org/wtfpl/COPYING for more details. */
+
+check_prereqs();
+libxml_use_internal_errors(true);
+
+if(!file_exists('bin/ExeFile.exe')) {
+    fatal('Not being run from EVE directory- cd to your EVE directory first then restart the script');
+}
+
+const LAUNCHER_INFO = 'http://client.eveonline.com/patches/win_launcherinfoTQ_inc.txt';
+const VERIFY_USER = 'https://client.eveonline.com/launcherv3/en/VerifyUser/';
+
+$c = curl_init();
+//curl_setopt($c, CURLOPT_VERBOSE, true);
+curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($c, CURLOPT_ENCODING, 'gzip,deflate');
+curl_setopt($c, CURLOPT_FOLLOWLOCATION, true);
+curl_setopt($c, CURLOPT_AUTOREFERER, true);
+curl_setopt($c, CURLOPT_COOKIEJAR, $f = tempnam('/tmp', $argv[0].'_curlcookie'));
+curl_setopt($c, CURLOPT_COOKIEFILE, $f);
+curl_setopt($c, CURLOPT_HTTPHEADER, array('User-Agent', 'EVEOnlineLauncher/2.1.539169'));
+
+curl_setopt($c, CURLOPT_URL, LAUNCHER_INFO);
+$launcherinfo = yaml_parse(curl_exec($c));
+$landingpageuri = url_relative_to_absolute(LAUNCHER_INFO, $launcherinfo['UISettings']['LandingPage']);
+
+curl_setopt($c, CURLOPT_URL, $landingpageuri);
+$launcherpage = new \DOMDocument();
+$launcherpage->loadHTML(curl_exec($c));
+$loginuri = url_relative_to_absolute($landingpageuri, $launcherpage->getElementByID('sso-frame')->getAttribute('src'));
+
+curl_setopt($c, CURLOPT_URL, $loginuri);
+$loginpage = new \DOMDocument();
+$loginpage->loadHTML(curl_exec($c));
+$actionuri = url_relative_to_absolute($loginuri, $loginpage->getElementsByTagName('form')->item(0)->getAttribute('action'));
+
+curl_setopt($c, CURLOPT_URL, $actionuri);
+$account = prompt('Account name: ');
+$passwd = prompt('Password: ', true);
+curl_setopt($c, CURLOPT_POST, true);
+curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query(array('UserName' => $account, 'Password' => $passwd)));
+curl_setopt($c, CURLOPT_FOLLOWLOCATION, false);
+curl_setopt($c, CURLOPT_HEADER, true);
+$auth = curl_exec($c);
+
+if(!preg_match('%^Location: (.+)\r$%m', $auth, $matches)) {
+    fatal('got no Location redirect, assume login failed');
+}
+$authuri = url_relative_to_absolute($actionuri, $matches[1]);
+
+curl_setopt($c, CURLOPT_URL, $authuri);
+curl_setopt($c, CURLOPT_POST, false);
+$authresult = curl_exec($c);
+
+if(preg_match('%<title>License Agreement Update</title>%', $authresult)) {
+    /* Have to accept the EULA */
+    $eula = new \DOMDocument();
+    $eula->loadHTML($authresult);
+
+    $accept = prompt('Do you accept the EULA [y/N]? ');
+    if(!in_array(strtolower($accept), array('y', 'yes'))) {
+        /* There is no hope */
+        die(41);
+    }
+
+    $post = array();
+    foreach($eula->getElementsByTagName('input') as $input) {
+        if($input->getAttribute('id') === 'decline') continue; /* Don't decline the EULA, duh */
+
+        $post[$input->getAttribute('name')] = $input->getAttribute('value');
+    }
+
+    $actionuri = url_relative_to_absolute($authuri, $eula->getElementsByTagName('form')->item(0)->getAttribute('action'));
+
+    curl_setopt($c, CURLOPT_URL, $actionuri);
+    curl_setopt($c, CURLOPT_POST, true);
+    curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query($post));
+    $authresult = curl_exec($c);
+
+    curl_setopt($c, CURLOPT_POST, false);
+}
+
+if(!preg_match('%^Location: (.+)\r$%m', $authresult, $matches)) {
+    echo $authresult;
+    fatal('got no Location redirect (round 2), something is wrong!');
+}
+$finaluri = url_relative_to_absolute($authuri, $matches[1]);
+
+curl_setopt($c, CURLOPT_URL, $finaluri);
+$final = curl_exec($c);
+
+if(!preg_match('%#access_token=([^&]+)%', $finaluri, $matches)) {
+    fatal('got no access token, something is wrong!');
+}
+
+$token = $matches[1];
+if(!$token) {
+    fatal('got no token, something is wrong');
+}
+info('got token '.$token);
+
+curl_setopt($c, CURLOPT_URL, VERIFY_USER);
+curl_setopt($c, CURLOPT_HEADER, false);
+curl_setopt($c, CURLOPT_POST, true);
+curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query(array('token' => $token)));
+curl_setopt($c, CURLOPT_HTTPHEADER, array('Authorization', 'Bearer '.$token));
+$verify = json_decode(json_decode(curl_exec($c)), true); /* NOT a typo */
+
+if($verify['Scopes'] !== 'eveClientToken') {
+    fatal('got invalid Scope, something is wrong');
+} else {
+    info('user validated, userID is '.$verify['UserID']);
+}
+
+curl_setopt($c, CURLOPT_URL, url_relative_to_absolute($finaluri, '/launcher/token?accesstoken='.$token));
+curl_setopt($c, CURLOPT_POST, false);
+curl_setopt($c, CURLOPT_HEADER, true);
+$finaltoken = curl_exec($c);
+
+if(!preg_match('%#access_token=([^&]+)%', $finaltoken, $matches)) {
+    fatal('got no client access token, something is wrong!');
+}
+$finaltoken = $matches[1];
+if(!$finaltoken) {
+    fatal('got no final token, something is wrong');
+}
+
+info('got final token '.$finaltoken);
+info("launching client…");
+passthru('wine bin/ExeFile.exe /noconsole /ssoToken='.$finaltoken.' /server:Tranquility');
+
+curl_close($c);
+die();
+
+/* --------------------- */
+
+function info($mesg) {
+    fprintf(STDERR, "INFO: ".$mesg."\n");
+}
+
+function fatal($mesg) {
+    fprintf(STDERR, "FATAL: ".$mesg."\n");
+    die(42);
+}
+
+function check_prereqs() {
+    function_exists('curl_init') or fatal("curl extension is required");
+    function_exists('yaml_parse') or fatal("PECL yaml extension is required (pecl install yaml-beta)");
+}
+
+function url_relative_to_absolute($current, $relative) {
+    list($current, ) = explode('?', $current, 2);
+    $relativequery = explode('?', $relative, 2);
+    list($relative, $relativeQ) = (count($relativequery) === 2) ? $relativequery : array($relative, '');
+
+    $cparts = explode('/', $current);
+    $rparts = explode('/', $relative);
+
+    if(preg_match('%^https?:$%', $rparts[0])) {
+        /* "Relative" URI is actually absolute */
+        $final = implode('/', $rparts);
+    } else if($rparts[0] === '') {
+        /* Relative of type /foo/bar */
+        $final = implode('/', array_merge(
+            array_slice($cparts, 0, 3), /* Protocol + domain name */
+            array_slice($rparts, 1) /* Full relative URI without leading / */
+        ));
+    } else {
+        /* Relative of type foo/bar or ./foo/bar, etc */
+        $final = implode('/', array_merge(
+            array_slice($cparts, 0, -1), /* Full URI without the last filename component */
+            $rparts
+        ));
+    }
+
+    return $final.'?'.$relativeQ;
+}
+
+function prompt($prompt, $hide = false) {
+    echo $prompt;
+    if($hide) shell_exec('stty -echo');
+    $input = fgets(STDIN);
+    if($hide) {
+        shell_exec('stty echo');
+        echo "\n";
+    }
+
+    return substr($input, 0, -1); /* Trim the final \n */
+}
