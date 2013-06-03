@@ -22,14 +22,9 @@ Usage
 =====
 
 ~~~
-cd /path/to/my/eve
-WINEPREFIX=/my/wine/prefix /path/to/eve-launcher/launcher <client_options…>
-~~~
+Usage:
+	launcher [-Ww,wine-option...] [eve-options...]
 
-Examples
-========
-
-~~~
-cd ~/eve
-~/eve-launcher/launcher /server:Tranquility /nosplash /noconsole /end /LUA:OFF
+Example:
+	launcher -Ww,explorer -Ww,/desktop=foo,1920x1080 /nosplash /noconsole /server:Tranquility
 ~~~

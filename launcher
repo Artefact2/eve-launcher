@@ -11,6 +11,11 @@
 check_prereqs();
 libxml_use_internal_errors(true);
 
+if($argc >= 2 && in_array($argv[1], array('-h', '--help', 'help', '/h', '/help'))) {
+    usage();
+    die();
+}
+
 if(!file_exists('bin/ExeFile.exe')) {
     fatal('Not being run from EVE directory- cd to your EVE directory first then restart the script');
 }
@@ -97,6 +102,8 @@ curl_setopt($c, CURLOPT_URL, $finaluri);
 $final = curl_exec($c);
 
 if(!preg_match('%#access_token=([^&]+)%', $finaluri, $matches)) {
+    echo $finaluri;
+    echo $final;
     fatal('got no access token, something is wrong!');
 }
 
@@ -112,15 +119,31 @@ if(!preg_match('%#access_token=([^&]+)%', $finaltoken, $matches)) {
 $finaltoken = $matches[1];
 info('got final token '.$finaltoken);
 
+$wineargs = array();
+$clientargs = array();
+
+for($i = 1; $i < $argc; ++$i) {
+    if(substr($argv[$i], 0, 4) == '-Ww,') {
+        $wineargs[] = substr($argv[$i], 4);
+    } else {
+        $clientargs[] = $argv[$i];
+    }
+}
+
 $command = escapeshellcmd('wine');
+
+foreach($wineargs as $arg) {
+    $command .= ' '.escapeshellarg($arg);
+}
+
 $command .= ' '.escapeshellarg('bin/ExeFile.exe');
 $command .= ' '.escapeshellarg('/ssoToken='.$finaltoken);
 
-for($i = 1; $i < $argc; ++$i) {
-    $command .= ' '.escapeshellarg($argv[$i]);
+foreach($clientargs as $arg) {
+    $command .= ' '.escapeshellarg($arg);
 }
 
-info("launching client…");
+info("launching client using command: ".$command);
 passthru($command);
 
 curl_close($c);
@@ -179,4 +202,11 @@ function prompt($prompt, $hide = false) {
     }
 
     return substr($input, 0, -1); /* Trim the final \n */
+}
+
+function usage() {
+    echo "Usage:\n"
+    ."\tlauncher [-Ww,wine-option...] [eve-options...]\n\n"
+    ."Example:\n"
+    ."\tlauncher -Ww,explorer -Ww,/desktop=foo,1920x1080 /nosplash /noconsole /server:Tranquility\n";
 }
