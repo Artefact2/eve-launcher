@@ -23,7 +23,7 @@ if(!file_exists('bin/ExeFile.exe')) {
 const LAUNCHER_INFO = 'http://client.eveonline.com/patches/win_launcherinfoTQ_inc.txt';
 
 $c = curl_init();
-//curl_setopt($c, CURLOPT_VERBOSE, true);
+//curl_setopt($c, CURLOPT_VERBOSE, true); /* Turn on when debugging */
 curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($c, CURLOPT_ENCODING, 'gzip,deflate');
 curl_setopt($c, CURLOPT_FOLLOWLOCATION, true);
@@ -33,7 +33,31 @@ curl_setopt($c, CURLOPT_COOKIEFILE, $f);
 curl_setopt($c, CURLOPT_HTTPHEADER, array('User-Agent', 'EVEOnlineLauncher/2.1.539169'));
 
 curl_setopt($c, CURLOPT_URL, LAUNCHER_INFO);
-preg_match('%    LandingPage: (.+)$%m', curl_exec($c), $matches);
+$info = curl_exec($c);
+
+
+
+/* Check client is up to date */
+
+preg_match('%    BuildNumberInfoFile: (.+)%m', $info, $matches);
+curl_setopt($c, CURLOPT_URL, trim($matches[1]));
+$buildinfo = curl_exec($c);
+preg_match('%BUILD:([1-9][0-9]*), %', $buildinfo, $matches);
+$remote = $matches[1];
+$local = file_exists('common.ini') ? (int)(parse_ini_file('common.ini')['build']) : '(unknown)';
+
+echo "Remote has build ".$remote.", local has build ".$local."\n";
+if(is_int($local) && $local < $remote) {
+	echo "WARNING: your client is out of date.\n";
+} else if(is_int($local) && $local > $remote) {
+	echo "WARNING: your client has a newer build than remote.\n";
+}
+
+
+
+/* Start login sequence */
+
+preg_match('%    LandingPage: (.+)$%m', $info, $matches);
 $landingpageuri = url_relative_to_absolute(LAUNCHER_INFO, trim($matches[1]));
 
 curl_setopt($c, CURLOPT_URL, $landingpageuri);
@@ -54,9 +78,10 @@ curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query(array('UserName' => $accoun
 curl_setopt($c, CURLOPT_FOLLOWLOCATION, false);
 curl_setopt($c, CURLOPT_HEADER, true);
 $auth = curl_exec($c);
+unset($passwd); /* No funny business */
 
 if(!preg_match('%^Location: (.+)\r$%m', $auth, $matches)) {
-    fatal('got no Location redirect, assume login failed');
+    fatal('got no Location redirect, incorrect credentials?');
 }
 $authuri = url_relative_to_absolute($actionuri, $matches[1]);
 
