@@ -16,9 +16,9 @@ if($argc >= 2 && in_array($argv[1], array('-h', '--help', 'help', '/h', '/help')
     die();
 }
 
-if(!file_exists('bin/ExeFile.exe')) {
-    fatal('Not being run from EVE directory- cd to your EVE directory first then restart the script');
-}
+//if(!file_exists('bin/ExeFile.exe')) {
+//    fatal('Not being run from EVE directory- cd to your EVE directory first then restart the script');
+//}
 
 const LAUNCHER_INFO = 'http://client.eveonline.com/patches/win_launcherinfoTQ_inc.txt';
 
@@ -44,7 +44,7 @@ curl_setopt($c, CURLOPT_URL, trim($matches[1]));
 $buildinfo = curl_exec($c);
 preg_match('%BUILD:([1-9][0-9]*), %', $buildinfo, $matches);
 $remote = $matches[1];
-$local = file_exists('common.ini') ? (int)(parse_ini_file('common.ini')['build']) : '(unknown)';
+$local = file_exists('start.ini') ? (int)(parse_ini_file('start.ini')['build']) : '(unknown)';
 
 echo "Remote has build ".$remote.", local has build ".$local."\n";
 if(is_int($local) && $local < $remote) {
