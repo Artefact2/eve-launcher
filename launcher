@@ -23,14 +23,14 @@ if($argc >= 2 && in_array($argv[1], array('-h', '--help', 'help', '/h', '/help')
 const LAUNCHER_INFO = 'http://client.eveonline.com/patches/win_launcherinfoTQ_inc.txt';
 
 $c = curl_init();
-//curl_setopt($c, CURLOPT_VERBOSE, true); /* Turn on when debugging */
+//curl_setopt($c, CURLOPT_VERBOSE, true);
 curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($c, CURLOPT_ENCODING, 'gzip,deflate');
 curl_setopt($c, CURLOPT_FOLLOWLOCATION, true);
 curl_setopt($c, CURLOPT_AUTOREFERER, true);
 curl_setopt($c, CURLOPT_COOKIEJAR, $f = tempnam('/tmp', $argv[0].'_curlcookie'));
 curl_setopt($c, CURLOPT_COOKIEFILE, $f);
-curl_setopt($c, CURLOPT_HTTPHEADER, array('User-Agent', 'EVEOnlineLauncher/2.1.539169'));
+curl_setopt($c, CURLOPT_HTTPHEADER, array('User-Agent', 'EVEOnlineLauncher/2.2.859950'));
 
 curl_setopt($c, CURLOPT_URL, LAUNCHER_INFO);
 $info = curl_exec($c);
@@ -40,7 +40,7 @@ $info = curl_exec($c);
 /* Check client is up to date */
 
 preg_match('%    BuildNumberInfoFile: (.+)%m', $info, $matches);
-curl_setopt($c, CURLOPT_URL, trim($matches[1]));
+curl_setopt($c, CURLOPT_URL, $uri = trim($matches[1]));
 $buildinfo = curl_exec($c);
 preg_match('%BUILD:([1-9][0-9]*), %', $buildinfo, $matches);
 $remote = $matches[1];
@@ -60,39 +60,52 @@ if(is_int($local) && $local < $remote) {
 preg_match('%    LandingPage: (.+)$%m', $info, $matches);
 $landingpageuri = url_relative_to_absolute(LAUNCHER_INFO, trim($matches[1]));
 
-curl_setopt($c, CURLOPT_URL, $landingpageuri);
+curl_setopt($c, CURLOPT_URL, encode($landingpageuri));
 $launcherpage = new \DOMDocument();
 $launcherpage->loadHTML(curl_exec($c));
 $loginuri = url_relative_to_absolute($landingpageuri, $launcherpage->getElementByID('sso-frame')->getAttribute('src'));
 
-curl_setopt($c, CURLOPT_URL, $loginuri);
+curl_setopt($c, CURLOPT_URL, encode($loginuri));
 $loginpage = new \DOMDocument();
 $loginpage->loadHTML(curl_exec($c));
 $actionuri = url_relative_to_absolute($loginuri, $loginpage->getElementsByTagName('form')->item(0)->getAttribute('action'));
 
-curl_setopt($c, CURLOPT_URL, $actionuri);
+curl_setopt($c, CURLOPT_URL, encode($actionuri));
 $account = prompt('Account : ');
 $passwd =  prompt('Password: ', true);
 curl_setopt($c, CURLOPT_POST, true);
 curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query(array('UserName' => $account, 'Password' => $passwd)));
-curl_setopt($c, CURLOPT_FOLLOWLOCATION, false);
 curl_setopt($c, CURLOPT_HEADER, true);
 $auth = curl_exec($c);
 unset($passwd); /* No funny business */
 
-if(!preg_match('%^Location: (.+)\r$%m', $auth, $matches)) {
-    fatal('got no Location redirect, incorrect credentials?');
+if(preg_match('%<h1>Complete login</h1>%', $auth)) {
+	/* Have to ask for a character name */
+	
+	$challenge = new \DOMDocument();
+    $challenge->loadHTML($auth);
+
+    $post = array();
+    foreach($challenge->getElementsByTagName('input') as $input) {
+        $post[$input->getAttribute('name')] = $input->getAttribute('value');
+    }
+
+    $post['Challenge'] = prompt('Enter the name of one of your characters: ');
+
+    $actionuri = url_relative_to_absolute($actionuri, $challenge->getElementsByTagName('form')->item(0)->getAttribute('action'));
+
+    curl_setopt($c, CURLOPT_URL, encode($actionuri));
+    curl_setopt($c, CURLOPT_POST, true);
+    curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query($post));
+    $auth = curl_exec($c);
+
+    curl_setopt($c, CURLOPT_POST, false);
 }
-$authuri = url_relative_to_absolute($actionuri, $matches[1]);
 
-curl_setopt($c, CURLOPT_URL, $authuri);
-curl_setopt($c, CURLOPT_POST, false);
-$authresult = curl_exec($c);
-
-if(preg_match('%<title>License Agreement Update</title>%', $authresult)) {
+if(preg_match('%<title>License Agreement Update</title>%', $auth)) {
     /* Have to accept the EULA */
     $eula = new \DOMDocument();
-    $eula->loadHTML($authresult);
+    $eula->loadHTML($auth);
 
     $accept = prompt('Do you accept the EULA [y/N]? ');
     if(!in_array(strtolower($accept), array('y', 'yes'))) {
@@ -109,33 +122,27 @@ if(preg_match('%<title>License Agreement Update</title>%', $authresult)) {
 
     $actionuri = url_relative_to_absolute($authuri, $eula->getElementsByTagName('form')->item(0)->getAttribute('action'));
 
-    curl_setopt($c, CURLOPT_URL, $actionuri);
+    curl_setopt($c, CURLOPT_URL, encode($actionuri));
     curl_setopt($c, CURLOPT_POST, true);
     curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query($post));
-    $authresult = curl_exec($c);
+    $authr = curl_exec($c);
 
     curl_setopt($c, CURLOPT_POST, false);
 }
 
-if(!preg_match('%^Location: (.+)\r$%m', $authresult, $matches)) {
-    echo $authresult;
-    fatal('got no Location redirect (round 2), something is wrong!');
-}
-$finaluri = url_relative_to_absolute($authuri, $matches[1]);
-
-curl_setopt($c, CURLOPT_URL, $finaluri);
+curl_setopt($c, CURLOPT_FOLLOWLOCATION, false);
+curl_setopt($c, CURLOPT_URL, encode($loginuri));
 $final = curl_exec($c);
 
-if(!preg_match('%#access_token=([^&]+)%', $finaluri, $matches)) {
-    echo $finaluri;
-    echo $final;
+if(!preg_match('%^Location: (.+)#access_token=([^&]+)%m', $final, $matches)) {
+	echo $final;
     fatal('got no access token, something is wrong!');
 }
 
-$token = $matches[1];
+$token = $matches[2];
 info('got token '.$token);
 
-curl_setopt($c, CURLOPT_URL, url_relative_to_absolute($finaluri, '/launcher/token?accesstoken='.$token));
+curl_setopt($c, CURLOPT_URL, encode(url_relative_to_absolute($matches[1], '/launcher/token?accesstoken='.$token)));
 $finaltoken = curl_exec($c);
 
 if(!preg_match('%#access_token=([^&]+)%', $finaltoken, $matches)) {
@@ -215,6 +222,23 @@ function url_relative_to_absolute($current, $relative) {
     }
 
     return $final.'?'.$relativeQ;
+}
+
+function encode($url) {
+	$s = explode('?', $url, 2);
+	if(count($s) === 1) return $url;
+
+	$params = [];
+	foreach(explode('&', $s[1]) as $param) {
+		$k = explode('=', $param, 2);
+		if(count($k) === 1) {
+			$params[] = $k[0];
+		} else {
+			$params[] = $k[0].'='.rawurlencode($k[1]);
+		}
+	}
+
+	return $s[0].'?'.implode('&', $params);
 }
 
 function prompt($prompt, $hide = false) {
