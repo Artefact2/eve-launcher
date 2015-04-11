@@ -16,10 +16,6 @@ PHP >= 5.4 CLI, with cURL extension.
 Known issues
 ============
 
-* The character name quiz is not implemented at the moment. If you
-  encounter this issue, try logging in to EVE Gate in your browser
-  from the same computer, and retry launching the launcher.
-
 * This launcher assumes your client is up-to-date. If your client is
   not up-to-date, you can run the vanilla launcher or run the repair
   tool.
